@@ -15,7 +15,7 @@ banks_data = pd.read_csv(BANKS_CSV_PATH)
 BANKS = banks_data.to_dict(orient="records")
 
 # Streamlit app
-st.title("Bank Loan Analysis")
+st.title("Bank Construction Loan Analysis")
 
 # State selection
 states = sorted(banks_data["state"].unique())
@@ -53,18 +53,6 @@ filtered_banks = [
 
 # Display filtered banks for user confirmation
 st.write(f"### Selected Banks ({len(filtered_banks)} total)", pd.DataFrame(filtered_banks))
-
-# Show pie chart if filtered by state, county, or city
-if selected_state != "All" or selected_county != "All" or selected_city != "All":
-    st.write("### Bank Distribution Pie Chart")
-    pie_chart_data = pd.DataFrame(filtered_banks)
-    pie_chart = px.pie(
-        pie_chart_data,
-        names="name",
-        title="Bank Distribution",
-        hole=0.4,
-    )
-    st.plotly_chart(pie_chart)
 
 # Run analysis
 if st.button("Run Analysis"):
@@ -123,6 +111,20 @@ if st.button("Run Analysis"):
         if results:
             df = pd.DataFrame(results)
             st.write("### Analysis Results", df)
+
+            # Pie chart visualization for Total Construction Loans
+            st.write("### Total Construction Loans Distribution")
+            try:
+                pie_chart = px.pie(
+                    df,
+                    names="Bank Name",
+                    values="Total Construction Loans",
+                    title="Total Construction Loans by Bank",
+                    hole=0.4,
+                )
+                st.plotly_chart(pie_chart)
+            except Exception as e:
+                st.error(f"Error creating the pie chart: {e}")
 
             # Option to download results
             csv = df.to_csv(index=False).encode("utf-8")
