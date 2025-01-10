@@ -66,7 +66,6 @@ if st.button("Run Analysis"):
         results = []
         for bank in filtered_banks:
             try:
-                st.info(f"Analyzing {bank['name']} (RSSD ID: {bank['rssd_id']})...")
                 time_series = methods.collect_data(
                     session=conn,
                     creds=creds,
@@ -80,13 +79,12 @@ if st.button("Run Analysis"):
                 rconf159_data = next((item for item in time_series if item.get("mdrm") == "RCONF159"), None)
 
                 # Extract values
-                rconf158_value = rconf158_data.get("int_data", 0) if rconf158_data else 0
-                rconf159_value = rconf159_data.get("int_data", 0) if rconf159_data else 0
+                rconf158_value = (rconf158_data.get("int_data", 0) * 1000) if rconf158_data else 0
+                rconf159_value = (rconf159_data.get("int_data", 0) * 1000) if rconf159_data else 0
                 total_construction_loans = rconf158_value + rconf159_value
 
                 results.append({
                     "Bank Name": bank["name"],
-                    "RSSD ID": bank["rssd_id"],
                     "City": bank["city"],
                     "State": bank["state"],
                     "County": bank["county"],
@@ -98,7 +96,6 @@ if st.button("Run Analysis"):
                 st.error(f"Error analyzing {bank['name']}: {e}")
                 results.append({
                     "Bank Name": bank["name"],
-                    "RSSD ID": bank["rssd_id"],
                     "City": bank["city"],
                     "State": bank["state"],
                     "County": bank["county"],
@@ -110,7 +107,9 @@ if st.button("Run Analysis"):
         # Display results
         if results:
             df = pd.DataFrame(results)
-            st.write("### Analysis Results", df)
+            st.write("### Analysis Results")
+            st.write("*Note: All amounts are presented in ones (not thousands).*")
+            st.dataframe(df)
 
             # Pie chart visualization for Total Construction Loans
             st.write("### Total Construction Loans Distribution")
