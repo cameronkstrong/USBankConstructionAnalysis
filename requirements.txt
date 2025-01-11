@@ -3,3 +3,4 @@ pandas
 ffiec_data_connect
 plotly.express
 datetime
+concurrent.futures

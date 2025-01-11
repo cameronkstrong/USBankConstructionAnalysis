@@ -3,6 +3,7 @@ import pandas as pd
 from ffiec_data_connect import credentials, ffiec_connection, methods
 import plotly.express as px  # For pie chart visualization
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 # Replace with your FFIEC credentials
 USERNAME = "cameronkstrong03"
@@ -99,51 +100,51 @@ if st.session_state.get("show_selected_banks", False):
     st.dataframe(pd.DataFrame(filtered_banks))
 
 # Preserve results in session state
+def fetch_bank_data(bank, conn, creds, reporting_period):
+    try:
+        time_series = methods.collect_data(
+            session=conn,
+            creds=creds,
+            rssd_id=bank["rssd_id"],
+            reporting_period=reporting_period,
+            series="call"
+        )
+
+        # Filter for RCONF158 and RCONF159
+        rconf158_data = next((item for item in time_series if item.get("mdrm") == "RCONF158"), None)
+        rconf159_data = next((item for item in time_series if item.get("mdrm") == "RCONF159"), None)
+
+        # Extract values
+        rconf158_value = (rconf158_data.get("int_data", 0) * 1000) if rconf158_data else 0
+        rconf159_value = (rconf159_data.get("int_data", 0) * 1000) if rconf159_data else 0
+        total_construction_loans = rconf158_value + rconf159_value
+
+        return {
+            "Bank Name": bank["name"],
+            "City": bank["city"],
+            "State": bank["state"],
+            "County": bank["county"],
+            "1-4 Family Residential Construction Loans ($)": rconf158_value,
+            "Other Construction and Land Development Loans ($)": rconf159_value,
+            "Total Construction Loans ($)": total_construction_loans,
+        }
+    except Exception as e:
+        return {
+            "Bank Name": bank["name"],
+            "City": bank["city"],
+            "State": bank["state"],
+            "County": bank["county"],
+            "1-4 Family Residential Construction Loans ($)": "Error",
+            "Other Construction and Land Development Loans ($)": "Error",
+            "Total Construction Loans ($)": "Error",
+        }
+
 def run_analysis():
-    # Initialize FFIEC connection
     creds = credentials.WebserviceCredentials(username=USERNAME, password=PASSWORD)
     conn = ffiec_connection.FFIECConnection()
 
-    results = []
-    for bank in filtered_banks:
-        try:
-            time_series = methods.collect_data(
-                session=conn,
-                creds=creds,
-                rssd_id=bank["rssd_id"],
-                reporting_period=reporting_period,
-                series="call"
-            )
-
-            # Filter for RCONF158 and RCONF159
-            rconf158_data = next((item for item in time_series if item.get("mdrm") == "RCONF158"), None)
-            rconf159_data = next((item for item in time_series if item.get("mdrm") == "RCONF159"), None)
-
-            # Extract values
-            rconf158_value = (rconf158_data.get("int_data", 0) * 1000) if rconf158_data else 0
-            rconf159_value = (rconf159_data.get("int_data", 0) * 1000) if rconf159_data else 0
-            total_construction_loans = rconf158_value + rconf159_value
-
-            results.append({
-                "Bank Name": bank["name"],
-                "City": bank["city"],
-                "State": bank["state"],
-                "County": bank["county"],
-                "1-4 Family Residential Construction Loans ($)": rconf158_value,
-                "Other Construction and Land Development Loans ($)": rconf159_value,
-                "Total Construction Loans ($)": total_construction_loans,
-            })
-        except Exception as e:
-            st.error(f"Error analyzing {bank['name']}: {e}")
-            results.append({
-                "Bank Name": bank["name"],
-                "City": bank["city"],
-                "State": bank["state"],
-                "County": bank["county"],
-                "1-4 Family Residential Construction Loans ($)": "Error",
-                "Other Construction and Land Development Loans ($)": "Error",
-                "Total Construction Loans ($)": "Error",
-            })
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(lambda bank: fetch_bank_data(bank, conn, creds, reporting_period), filtered_banks))
 
     return pd.DataFrame(results)
 
