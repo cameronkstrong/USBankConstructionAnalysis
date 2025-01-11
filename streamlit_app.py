@@ -8,8 +8,8 @@ from datetime import datetime
 USERNAME = "cameronkstrong03"
 PASSWORD = "AI4aWtaFsaY8TMCyjOsS"
 
-# Load the bank list from the static CSV file
-BANKS_CSV_PATH = "banks.csv"  # Ensure this path matches the file's location
+# Load the bank list from the updated CSV file
+BANKS_CSV_PATH = "bankswregions_updated.csv"  # Ensure this path matches the file's location
 banks_data = pd.read_csv(BANKS_CSV_PATH)
 
 # Convert the DataFrame to a list of dictionaries
@@ -18,20 +18,37 @@ BANKS = banks_data.to_dict(orient="records")
 # Streamlit app
 st.title("Bank Construction Loan Analysis")
 
-# State selection (mandatory, no "All" option)
-states = sorted(banks_data["state"].unique())
+# Region selection (new filter)
+regions = sorted(banks_data["region"].dropna().unique())
+selected_region = st.selectbox("Select Region", ["All"] + regions)
+
+# Filter states based on selected region
+if selected_region == "All":
+    filtered_states = banks_data["state"].unique()
+else:
+    filtered_states = banks_data[banks_data["region"] == selected_region]["state"].unique()
+
+# State selection (optional, with "All" option)
+states = ["All"] + sorted(filtered_states)
 selected_state = st.selectbox("Select State", states)
 
-# County selection (filtered by state)
-filtered_counties = banks_data[banks_data["state"] == selected_state]["county"].unique()
+# County selection (filtered by state if selected, or by region)
+if selected_state == "All":
+    filtered_counties = banks_data[banks_data["region"] == selected_region]["county"].unique() if selected_region != "All" else banks_data["county"].unique()
+else:
+    filtered_counties = banks_data[banks_data["state"] == selected_state]["county"].unique()
 selected_county = st.selectbox("Select County", ["All"] + sorted(filtered_counties))
 
-# City selection (filtered by state and county)
-filtered_cities = (
-    banks_data[(banks_data["state"] == selected_state) & (banks_data["county"] == selected_county)]["city"].unique()
-    if selected_county != "All"
-    else banks_data[banks_data["state"] == selected_state]["city"].unique()
-)
+# City selection (filtered by state and county, or region if no state is selected)
+if selected_county == "All":
+    if selected_state == "All":
+        filtered_cities = banks_data[banks_data["region"] == selected_region]["city"].unique() if selected_region != "All" else banks_data["city"].unique()
+    else:
+        filtered_cities = banks_data[banks_data["state"] == selected_state]["city"].unique()
+else:
+    filtered_cities = banks_data[
+        (banks_data["state"] == selected_state) & (banks_data["county"] == selected_county)
+    ]["city"].unique()
 selected_city = st.selectbox("Select City", ["All"] + sorted(filtered_cities))
 
 # Generate valid reporting dates dynamically, delayed by one quarter
@@ -68,7 +85,8 @@ reporting_period = st.selectbox("Select Reporting Period", reporting_dates)
 filtered_banks = [
     bank
     for bank in BANKS
-    if (bank["state"] == selected_state)
+    if (selected_region == "All" or bank["region"] == selected_region)
+    and (selected_state == "All" or bank["state"] == selected_state)
     and (selected_county == "All" or bank["county"] == selected_county)
     and (selected_city == "All" or bank["city"] == selected_city)
 ]
