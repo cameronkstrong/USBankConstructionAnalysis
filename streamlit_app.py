@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from ffiec_data_connect import credentials, ffiec_connection, methods
 import plotly.express as px  # For pie chart visualization
+from datetime import datetime
 
 # Replace with your FFIEC credentials
 USERNAME = "cameronkstrong03"
@@ -39,8 +40,23 @@ filtered_cities = (
 )
 selected_city = st.selectbox("Select City", ["All"] + sorted(filtered_cities))
 
-# Reporting period input
-reporting_period = st.text_input("Enter Reporting Period (e.g., 6/30/2024)", "6/30/2024")
+# Generate valid reporting dates dynamically
+def generate_reporting_dates():
+    today = datetime.today()
+    current_year = today.year
+    quarters = ["3/31", "6/30", "9/30", "12/31"]
+    dates = []
+    for year in range(current_year, current_year - 5, -1):  # Generate dates for the last 5 years
+        for quarter in quarters:
+            date_str = f"{quarter}/{year}"
+            date_obj = datetime.strptime(date_str, "%m/%d/%Y")
+            if date_obj <= today:  # Include only dates up to the current date
+                dates.append(date_str)
+    return sorted(dates, key=lambda x: datetime.strptime(x, "%m/%d/%Y"), reverse=True)
+
+# Create the dropdown for reporting periods
+reporting_dates = generate_reporting_dates()
+reporting_period = st.selectbox("Select Reporting Period", reporting_dates)
 
 # Filter banks based on selections
 filtered_banks = [
@@ -142,10 +158,9 @@ if st.session_state.analysis_results is not None:
     # Top 10 lenders table
     st.write("### Top 10 Lenders by Loan Size")
     try:
-        df_filtered = df[df[st.session_state.chart_option].apply(lambda x: isinstance(x, (int, float)))]
+        df_filtered = df[df[st.session_state.chart_option].apply(lambda x: isinstance(x, (int, float)))].copy()
         top_10 = df_filtered[["Bank Name", st.session_state.chart_option]].sort_values(by=st.session_state.chart_option, ascending=False).head(10).reset_index(drop=True)
         top_10.insert(0, "Rank", range(1, len(top_10) + 1))  # Add Rank column
-        top_10 = top_10[["Rank", "Bank Name", st.session_state.chart_option]]  # Ensure only 3 columns
         st.write(f"Top 10 Lenders for {st.session_state.chart_option}")
         st.dataframe(top_10, use_container_width=True)
     except Exception as e:
