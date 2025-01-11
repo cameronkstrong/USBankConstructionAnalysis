@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 from ffiec_data_connect import credentials, ffiec_connection, methods
 import plotly.express as px  # For pie chart visualization
@@ -54,82 +54,108 @@ filtered_banks = [
 # Display filtered banks for user confirmation
 st.write(f"### Selected Banks ({len(filtered_banks)} total)", pd.DataFrame(filtered_banks))
 
-# Run analysis
+# Preserve results in session state
+def run_analysis():
+    # Initialize FFIEC connection
+    creds = credentials.WebserviceCredentials(username=USERNAME, password=PASSWORD)
+    conn = ffiec_connection.FFIECConnection()
+
+    results = []
+    for bank in filtered_banks:
+        try:
+            time_series = methods.collect_data(
+                session=conn,
+                creds=creds,
+                rssd_id=bank["rssd_id"],
+                reporting_period=reporting_period,
+                series="call"
+            )
+
+            # Filter for RCONF158 and RCONF159
+            rconf158_data = next((item for item in time_series if item.get("mdrm") == "RCONF158"), None)
+            rconf159_data = next((item for item in time_series if item.get("mdrm") == "RCONF159"), None)
+
+            # Extract values
+            rconf158_value = (rconf158_data.get("int_data", 0) * 1000) if rconf158_data else 0
+            rconf159_value = (rconf159_data.get("int_data", 0) * 1000) if rconf159_data else 0
+            total_construction_loans = rconf158_value + rconf159_value
+
+            results.append({
+                "Bank Name": bank["name"],
+                "City": bank["city"],
+                "State": bank["state"],
+                "County": bank["county"],
+                "1-4 Family Residential Construction Loans ($)": rconf158_value,
+                "Other Construction and Land Development Loans ($)": rconf159_value,
+                "Total Construction Loans ($)": total_construction_loans,
+            })
+        except Exception as e:
+            st.error(f"Error analyzing {bank['name']}: {e}")
+            results.append({
+                "Bank Name": bank["name"],
+                "City": bank["city"],
+                "State": bank["state"],
+                "County": bank["county"],
+                "1-4 Family Residential Construction Loans ($)": "Error",
+                "Other Construction and Land Development Loans ($)": "Error",
+                "Total Construction Loans ($)": "Error",
+            })
+
+    return pd.DataFrame(results)
+
+if "analysis_results" not in st.session_state:
+    st.session_state.analysis_results = None
+if "chart_option" not in st.session_state:
+    st.session_state.chart_option = "Total Construction Loans ($)"
+
 if st.button("Run Analysis"):
     if not filtered_banks:
         st.warning("No banks match the selected filters.")
     else:
-        # Initialize FFIEC connection
-        creds = credentials.WebserviceCredentials(username=USERNAME, password=PASSWORD)
-        conn = ffiec_connection.FFIECConnection()
+        st.session_state.analysis_results = run_analysis()
 
-        results = []
-        for bank in filtered_banks:
-            try:
-                time_series = methods.collect_data(
-                    session=conn,
-                    creds=creds,
-                    rssd_id=bank["rssd_id"],
-                    reporting_period=reporting_period,
-                    series="call"
-                )
+# Display results
+if st.session_state.analysis_results is not None:
+    df = st.session_state.analysis_results
+    st.write("### Analysis Results")
+    st.write("*Note: All amounts are presented in ones ($).*")
+    st.dataframe(df)
 
-                # Filter for RCONF158 and RCONF159
-                rconf158_data = next((item for item in time_series if item.get("mdrm") == "RCONF158"), None)
-                rconf159_data = next((item for item in time_series if item.get("mdrm") == "RCONF159"), None)
+    # Pie chart visualization for construction loans
+    st.write("### Construction Loans Distribution")
+    st.session_state.chart_option = st.selectbox(
+        "Select Loan Type for Pie Chart",
+        ["Total Construction Loans ($)", "1-4 Family Residential Construction Loans ($)", "Other Construction and Land Development Loans ($)"]
+    )
+    try:
+        pie_chart = px.pie(
+            df,
+            names="Bank Name",
+            values=st.session_state.chart_option,
+            title=f"{st.session_state.chart_option} by Bank",
+            hole=0.4,
+        )
+        st.plotly_chart(pie_chart)
+    except Exception as e:
+        st.error(f"Error creating the pie chart: {e}")
 
-                # Extract values
-                rconf158_value = (rconf158_data.get("int_data", 0) * 1000) if rconf158_data else 0
-                rconf159_value = (rconf159_data.get("int_data", 0) * 1000) if rconf159_data else 0
-                total_construction_loans = rconf158_value + rconf159_value
+    # Top 10 lenders table
+    st.write("### Top 10 Lenders by Loan Size")
+    try:
+        df_filtered = df[df[st.session_state.chart_option].apply(lambda x: isinstance(x, (int, float)))]
+        top_10 = df_filtered[["Bank Name", st.session_state.chart_option]].sort_values(by=st.session_state.chart_option, ascending=False).head(10).reset_index(drop=True)
+        top_10.insert(0, "Rank", range(1, len(top_10) + 1))  # Add Rank column
+        top_10 = top_10[["Rank", "Bank Name", st.session_state.chart_option]]  # Ensure only 3 columns
+        st.write(f"Top 10 Lenders for {st.session_state.chart_option}")
+        st.dataframe(top_10, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error creating the top 10 table: {e}")
 
-                results.append({
-                    "Bank Name": bank["name"],
-                    "City": bank["city"],
-                    "State": bank["state"],
-                    "County": bank["county"],
-                    "1-4 Family Residential Construction Loans (RCONF158)": rconf158_value,
-                    "Other Construction and Land Development Loans (RCONF159)": rconf159_value,
-                    "Total Construction Loans": total_construction_loans,
-                })
-            except Exception as e:
-                st.error(f"Error analyzing {bank['name']}: {e}")
-                results.append({
-                    "Bank Name": bank["name"],
-                    "City": bank["city"],
-                    "State": bank["state"],
-                    "County": bank["county"],
-                    "1-4 Family Residential Construction Loans (RCONF158)": "Error",
-                    "Other Construction and Land Development Loans (RCONF159)": "Error",
-                    "Total Construction Loans": "Error",
-                })
-
-        # Display results
-        if results:
-            df = pd.DataFrame(results)
-            st.write("### Analysis Results")
-            st.write("*Note: All amounts are presented in ones (not thousands).*")
-            st.dataframe(df)
-
-            # Pie chart visualization for Total Construction Loans
-            st.write("### Total Construction Loans Distribution")
-            try:
-                pie_chart = px.pie(
-                    df,
-                    names="Bank Name",
-                    values="Total Construction Loans",
-                    title="Total Construction Loans by Bank",
-                    hole=0.4,
-                )
-                st.plotly_chart(pie_chart)
-            except Exception as e:
-                st.error(f"Error creating the pie chart: {e}")
-
-            # Option to download results
-            csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="Download Results as CSV",
-                data=csv,
-                file_name="bank_analysis_results.csv",
-                mime="text/csv",
-            )
+    # Option to download results
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download Results as CSV",
+        data=csv,
+        file_name="bank_analysis_results.csv",
+        mime="text/csv",
+    )
