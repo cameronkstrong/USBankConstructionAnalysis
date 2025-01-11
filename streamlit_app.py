@@ -18,39 +18,45 @@ BANKS = banks_data.to_dict(orient="records")
 # Streamlit app
 st.title("Bank Construction Loan Analysis")
 
-# State selection
+# State selection (mandatory, no "All" option)
 states = sorted(banks_data["state"].unique())
-selected_state = st.selectbox("Select State", ["All"] + states)
+selected_state = st.selectbox("Select State", states)
 
 # County selection (filtered by state)
-filtered_counties = (
-    banks_data[banks_data["state"] == selected_state]["county"].unique()
-    if selected_state != "All"
-    else banks_data["county"].unique()
-)
+filtered_counties = banks_data[banks_data["state"] == selected_state]["county"].unique()
 selected_county = st.selectbox("Select County", ["All"] + sorted(filtered_counties))
 
 # City selection (filtered by state and county)
 filtered_cities = (
     banks_data[(banks_data["state"] == selected_state) & (banks_data["county"] == selected_county)]["city"].unique()
-    if selected_state != "All" and selected_county != "All"
+    if selected_county != "All"
     else banks_data[banks_data["state"] == selected_state]["city"].unique()
-    if selected_state != "All"
-    else banks_data["city"].unique()
 )
 selected_city = st.selectbox("Select City", ["All"] + sorted(filtered_cities))
 
-# Generate valid reporting dates dynamically
+# Generate valid reporting dates dynamically, delayed by one quarter
 def generate_reporting_dates():
     today = datetime.today()
     current_year = today.year
     quarters = ["3/31", "6/30", "9/30", "12/31"]
     dates = []
+
+    # Determine the most recent valid quarter
+    if today.month in [1, 2, 3]:  # Q1: Delay to previous year's Q4
+        latest_quarter = f"9/30/{current_year - 1}"
+    elif today.month in [4, 5, 6]:  # Q2: Delay to Q1
+        latest_quarter = f"12/31/{current_year - 1}"
+    elif today.month in [7, 8, 9]:  # Q3: Delay to Q2
+        latest_quarter = f"3/31/{current_year}"
+    else:  # Q4: Delay to Q3
+        latest_quarter = f"6/30/{current_year}"
+
+    # Generate dates up to the most recent valid quarter
     for year in range(current_year, current_year - 5, -1):  # Generate dates for the last 5 years
         for quarter in quarters:
             date_str = f"{quarter}/{year}"
             date_obj = datetime.strptime(date_str, "%m/%d/%Y")
-            if date_obj <= today:  # Include only dates up to the current date
+            if date_obj <= datetime.strptime(latest_quarter, "%m/%d/%Y"):
                 dates.append(date_str)
     return sorted(dates, key=lambda x: datetime.strptime(x, "%m/%d/%Y"), reverse=True)
 
@@ -62,13 +68,17 @@ reporting_period = st.selectbox("Select Reporting Period", reporting_dates)
 filtered_banks = [
     bank
     for bank in BANKS
-    if (selected_state == "All" or bank["state"] == selected_state)
+    if (bank["state"] == selected_state)
     and (selected_county == "All" or bank["county"] == selected_county)
     and (selected_city == "All" or bank["city"] == selected_city)
 ]
 
-# Display filtered banks for user confirmation
-st.write(f"### Selected Banks ({len(filtered_banks)} total)", pd.DataFrame(filtered_banks))
+# Display filtered banks count
+st.write(f"### Selected Banks ({len(filtered_banks)} total)")
+
+# Hide the table unless the analysis is run
+if st.session_state.get("show_selected_banks", False):
+    st.dataframe(pd.DataFrame(filtered_banks))
 
 # Preserve results in session state
 def run_analysis():
@@ -121,6 +131,8 @@ def run_analysis():
 
 if "analysis_results" not in st.session_state:
     st.session_state.analysis_results = None
+if "show_selected_banks" not in st.session_state:
+    st.session_state.show_selected_banks = False
 if "chart_option" not in st.session_state:
     st.session_state.chart_option = "Total Construction Loans ($)"
 
@@ -128,6 +140,7 @@ if st.button("Run Analysis"):
     if not filtered_banks:
         st.warning("No banks match the selected filters.")
     else:
+        st.session_state.show_selected_banks = True
         st.session_state.analysis_results = run_analysis()
 
 # Display results
